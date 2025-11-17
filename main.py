@@ -1,8 +1,12 @@
 import os
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from typing import List, Optional
+from database import create_document, get_documents
+from schemas import Project
 
-app = FastAPI()
+app = FastAPI(title="Portfolio API")
 
 app.add_middleware(
     CORSMiddleware,
@@ -14,11 +18,33 @@ app.add_middleware(
 
 @app.get("/")
 def read_root():
-    return {"message": "Hello from FastAPI Backend!"}
+    return {"message": "Portfolio API running"}
 
-@app.get("/api/hello")
-def hello():
-    return {"message": "Hello from the backend API!"}
+@app.get("/api/projects", response_model=List[Project])
+def list_projects(highlight: Optional[bool] = None, limit: int = 50):
+    try:
+        filter_dict = {}
+        if highlight is not None:
+            filter_dict["highlight"] = highlight
+        docs = get_documents("project", filter_dict, limit)
+        # Convert Mongo documents to pydantic-compatible dicts
+        for d in docs:
+            d.pop("_id", None)
+            # Convert any non-serializable fields if needed
+        return docs
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+class CreateProjectRequest(Project):
+    pass
+
+@app.post("/api/projects")
+def create_project(payload: CreateProjectRequest):
+    try:
+        _id = create_document("project", payload)
+        return {"id": _id, "status": "created"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/test")
 def test_database():
